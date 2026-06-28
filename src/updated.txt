@@ -1,0 +1,169 @@
+
+int northCount = 0, southCount = 0, eastCount = 0, westCount = 0;
+
+enum LightState { NS_GREEN_PHASE, NS_YELLOW_PHASE, EW_GREEN_PHASE, EW_YELLOW_PHASE };
+LightState currentState = NS_GREEN_PHASE;
+unsigned long stateStartTime = 0;
+
+const unsigned long BASE_GREEN_TIME   = 500; // ms, minimum green even at zero density
+const unsigned long PER_VEHICLE_TIME  = 200; // ms, added per vehicle in queue
+const unsigned long YELLOW_TIME       = 300; // ms, fixed
+
+unsigned long currentGreenDuration = BASE_GREEN_TIME; // recalculated each time a lane wins
+
+bool lastNorthIn = LOW, lastNorthOut = LOW;
+bool lastSouthIn = LOW, lastSouthOut = LOW;
+bool lastEastIn  = LOW, lastEastOut  = LOW;
+bool lastWestIn  = LOW, lastWestOut  = LOW;
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("=== Traffic Junction Boot ===");
+
+  pinMode(NORTH_IN, INPUT);
+  pinMode(NORTH_OUT, INPUT);
+  pinMode(SOUTH_IN, INPUT);
+  pinMode(SOUTH_OUT, INPUT);
+  pinMode(EAST_IN, INPUT);
+  pinMode(EAST_OUT, INPUT);
+  pinMode(WEST_IN, INPUT);
+  pinMode(WEST_OUT, INPUT);
+
+  pinMode(NS_RED, OUTPUT);   pinMode(NS_YELLOW, OUTPUT);  pinMode(NS_GREEN, OUTPUT);
+  pinMode(EW_RED, OUTPUT);   pinMode(EW_YELLOW, OUTPUT);  pinMode(EW_GREEN, OUTPUT);
+
+  // start NS green with a calculated duration based on whatever density exists at boot
+  currentGreenDuration = calcGreenDuration(northCount + southCount);
+  stateStartTime = millis();
+}
+
+void loop() {
+  updateDensity();
+  updateStateMachine();
+  applyLights();
+  printDebug();
+}
+
+void updateDensity() {
+  readLaneEdgeTriggered("NORTH", NORTH_IN, lastNorthIn, NORTH_OUT, lastNorthOut, northCount);
+  readLaneEdgeTriggered("SOUTH", SOUTH_IN, lastSouthIn, SOUTH_OUT, lastSouthOut, southCount);
+  readLaneEdgeTriggered("EAST",  EAST_IN,  lastEastIn,  EAST_OUT,  lastEastOut,  eastCount);
+  readLaneEdgeTriggered("WEST",  WEST_IN,  lastWestIn,  WEST_OUT,  lastWestOut,  westCount);
+}
+
+void readLaneEdgeTriggered(const char* name, int inPin, bool &lastIn, int outPin, bool &lastOut, int &count) {
+  bool currentIn = digitalRead(inPin);
+  if (currentIn == HIGH && lastIn == LOW) {
+    count++;
+    Serial.print("[EVENT] "); Serial.print(name);
+    Serial.print(" IN -> count = "); Serial.println(count);
+  }
+  lastIn = currentIn;
+
+  bool currentOut = digitalRead(outPin);
+  if (currentOut == HIGH && lastOut == LOW) {
+    count--;
+    if (count < 0) count = 0;
+    Serial.print("[EVENT] "); Serial.print(name);
+    Serial.print(" OUT -> count = "); Serial.println(count);
+  }
+  lastOut = currentOut;
+}
+
+// time-per-vehicle formula: base + (density * per-vehicle seconds)
+unsigned long calcGreenDuration(int density) {
+  return BASE_GREEN_TIME + ((unsigned long)density * PER_VEHICLE_TIME);
+}
+
+void updateStateMachine() {
+  unsigned long elapsed = millis() - stateStartTime;
+  int nsDensity = northCount + southCount;
+  int ewDensity = eastCount + westCount;
+
+  switch (currentState) {
+
+    case NS_GREEN_PHASE:
+      if (elapsed > currentGreenDuration) {
+        // re-evaluate density NOW, at the moment green would expire
+        if (ewDensity >= nsDensity && ewDensity > 0) {
+          // different axis wins -> go through yellow
+          Serial.println("[STATE] NS_GREEN -> NS_YELLOW (EW will take over)");
+          currentState = NS_YELLOW_PHASE;
+        } else {
+          // same axis (NS) wins again -> skip yellow, extend green directly
+          currentGreenDuration = calcGreenDuration(nsDensity);
+          Serial.print("[STATE] NS_GREEN extended, new duration = ");
+          Serial.println(currentGreenDuration);
+        }
+        stateStartTime = millis();
+      }
+      break;
+
+    case NS_YELLOW_PHASE:
+      if (elapsed > YELLOW_TIME) {
+        currentGreenDuration = calcGreenDuration(ewDensity);
+        Serial.print("[STATE] NS_YELLOW -> EW_GREEN, duration = ");
+        Serial.println(currentGreenDuration);
+        currentState = EW_GREEN_PHASE;
+        stateStartTime = millis();
+      }
+      break;
+
+    case EW_GREEN_PHASE:
+      if (elapsed > currentGreenDuration) {
+        if (nsDensity >= ewDensity && nsDensity > 0) {
+          Serial.println("[STATE] EW_GREEN -> EW_YELLOW (NS will take over)");
+          currentState = EW_YELLOW_PHASE;
+        } else {
+          currentGreenDuration = calcGreenDuration(ewDensity);
+          Serial.print("[STATE] EW_GREEN extended, new duration = ");
+          Serial.println(currentGreenDuration);
+        }
+        stateStartTime = millis();
+      }
+      break;
+
+    case EW_YELLOW_PHASE:
+      if (elapsed > YELLOW_TIME) {
+        currentGreenDuration = calcGreenDuration(nsDensity);
+        Serial.print("[STATE] EW_YELLOW -> NS_GREEN, duration = ");
+        Serial.println(currentGreenDuration);
+        currentState = NS_GREEN_PHASE;
+        stateStartTime = millis();
+      }
+      break;
+  }
+}
+
+void applyLights() {
+  bool nsGreen  = (currentState == NS_GREEN_PHASE);
+  bool nsYellow = (currentState == NS_YELLOW_PHASE);
+  bool nsRed    = (currentState == EW_GREEN_PHASE || currentState == EW_YELLOW_PHASE);
+
+  bool ewGreen  = (currentState == EW_GREEN_PHASE);
+  bool ewYellow = (currentState == EW_YELLOW_PHASE);
+  bool ewRed    = (currentState == NS_GREEN_PHASE || currentState == NS_YELLOW_PHASE);
+
+  digitalWrite(NS_GREEN, nsGreen);
+  digitalWrite(NS_YELLOW, nsYellow);
+  digitalWrite(NS_RED, nsRed);
+  digitalWrite(EW_GREEN, ewGreen);
+  digitalWrite(EW_YELLOW, ewYellow);
+  digitalWrite(EW_RED, ewRed);
+}
+
+void printDebug() {
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    lastPrint = millis();
+    Serial.print("[STATUS] N:"); Serial.print(northCount);
+    Serial.print(" S:"); Serial.print(southCount);
+    Serial.print(" E:"); Serial.print(eastCount);
+    Serial.print(" W:"); Serial.print(westCount);
+    Serial.print(" | NS_density:"); Serial.print(northCount + southCount);
+    Serial.print(" EW_density:"); Serial.print(eastCount + westCount);
+    Serial.print(" | State:"); Serial.print(currentState);
+    Serial.print(" | GreenDur:"); Serial.println(currentGreenDuration);
+  }
+}

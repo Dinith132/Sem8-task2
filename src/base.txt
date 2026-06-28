@@ -1,0 +1,140 @@
+
+int northCount = 0, southCount = 0, eastCount = 0, westCount = 0;
+
+enum LightState { NS_GREEN_PHASE, NS_YELLOW_PHASE, EW_GREEN_PHASE, EW_YELLOW_PHASE };
+LightState currentState = NS_GREEN_PHASE;
+unsigned long stateStartTime = 0;
+
+const unsigned long GREEN_TIME  = 2000;
+const unsigned long YELLOW_TIME = 500;
+
+bool lastNorthIn = LOW, lastNorthOut = LOW;
+bool lastSouthIn = LOW, lastSouthOut = LOW;
+bool lastEastIn  = LOW, lastEastOut  = LOW;
+bool lastWestIn  = LOW, lastWestOut  = LOW;
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("=== Traffic Junction Boot ===");
+
+  // Pins WITH internal pulldown support
+  pinMode(NORTH_IN, INPUT_PULLDOWN);
+  pinMode(NORTH_OUT, INPUT_PULLDOWN);
+  pinMode(EAST_IN, INPUT_PULLDOWN);
+  pinMode(EAST_OUT, INPUT_PULLDOWN);
+
+  // Pins WITHOUT internal pulldown (34,35,36,39) - plain INPUT, may float
+  pinMode(SOUTH_IN, INPUT);
+  pinMode(SOUTH_OUT, INPUT);
+  pinMode(WEST_IN, INPUT);
+  pinMode(WEST_OUT, INPUT);
+
+  pinMode(NS_RED, OUTPUT);   pinMode(NS_YELLOW, OUTPUT);  pinMode(NS_GREEN, OUTPUT);
+  pinMode(EW_RED, OUTPUT);   pinMode(EW_YELLOW, OUTPUT);  pinMode(EW_GREEN, OUTPUT);
+
+  stateStartTime = millis();
+}
+
+void loop() {
+  updateDensity();
+  updateStateMachine();
+  applyLights();
+  printDebug();
+}
+
+void updateDensity() {
+  readLaneEdgeTriggered("NORTH", NORTH_IN, lastNorthIn, NORTH_OUT, lastNorthOut, northCount);
+  readLaneEdgeTriggered("SOUTH", SOUTH_IN, lastSouthIn, SOUTH_OUT, lastSouthOut, southCount);
+  readLaneEdgeTriggered("EAST",  EAST_IN,  lastEastIn,  EAST_OUT,  lastEastOut,  eastCount);
+  readLaneEdgeTriggered("WEST",  WEST_IN,  lastWestIn,  WEST_OUT,  lastWestOut,  westCount);
+}
+
+void readLaneEdgeTriggered(const char* name, int inPin, bool &lastIn, int outPin, bool &lastOut, int &count) {
+  bool currentIn = digitalRead(inPin);
+  if (currentIn == HIGH && lastIn == LOW) {
+    count++;
+    Serial.print("[EVENT] "); Serial.print(name);
+    Serial.print(" IN triggered -> count INCREASED to "); Serial.println(count);
+  }
+  lastIn = currentIn;
+
+  bool currentOut = digitalRead(outPin);
+  if (currentOut == HIGH && lastOut == LOW) {
+    count--;
+    if (count < 0) count = 0;
+    Serial.print("[EVENT] "); Serial.print(name);
+    Serial.print(" OUT triggered -> count DECREASED to "); Serial.println(count);
+  }
+  lastOut = currentOut;
+}
+
+void updateStateMachine() {
+  unsigned long elapsed = millis() - stateStartTime;
+  int nsDensity = northCount + southCount;
+  int ewDensity = eastCount + westCount;
+
+  switch (currentState) {
+    case NS_GREEN_PHASE:
+      if (elapsed > GREEN_TIME) {
+        Serial.println("[STATE] NS_GREEN -> NS_YELLOW");
+        currentState = NS_YELLOW_PHASE;
+        stateStartTime = millis();
+      }
+      break;
+    case NS_YELLOW_PHASE:
+      if (elapsed > YELLOW_TIME) {
+        currentState = (ewDensity >= nsDensity) ? EW_GREEN_PHASE : NS_GREEN_PHASE;
+        Serial.print("[STATE] NS_YELLOW -> ");
+        Serial.println(currentState == EW_GREEN_PHASE ? "EW_GREEN" : "NS_GREEN");
+        stateStartTime = millis();
+      }
+      break;
+    case EW_GREEN_PHASE:
+      if (elapsed > GREEN_TIME) {
+        Serial.println("[STATE] EW_GREEN -> EW_YELLOW");
+        currentState = EW_YELLOW_PHASE;
+        stateStartTime = millis();
+      }
+      break;
+    case EW_YELLOW_PHASE:
+      if (elapsed > YELLOW_TIME) {
+        currentState = (nsDensity >= ewDensity) ? NS_GREEN_PHASE : EW_GREEN_PHASE;
+        Serial.print("[STATE] EW_YELLOW -> ");
+        Serial.println(currentState == NS_GREEN_PHASE ? "NS_GREEN" : "EW_GREEN");
+        stateStartTime = millis();
+      }
+      break;
+  }
+}
+
+void applyLights() {
+  bool nsGreen  = (currentState == NS_GREEN_PHASE);
+  bool nsYellow = (currentState == NS_YELLOW_PHASE);
+  bool nsRed    = (currentState == EW_GREEN_PHASE || currentState == EW_YELLOW_PHASE);
+
+  bool ewGreen  = (currentState == EW_GREEN_PHASE);
+  bool ewYellow = (currentState == EW_YELLOW_PHASE);
+  bool ewRed    = (currentState == NS_GREEN_PHASE || currentState == NS_YELLOW_PHASE);
+
+  digitalWrite(NS_GREEN, nsGreen);
+  digitalWrite(NS_YELLOW, nsYellow);
+  digitalWrite(NS_RED, nsRed);
+  digitalWrite(EW_GREEN, ewGreen);
+  digitalWrite(EW_YELLOW, ewYellow);
+  digitalWrite(EW_RED, ewRed);
+}
+
+void printDebug() {
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    lastPrint = millis();
+    Serial.print("[STATUS] N:"); Serial.print(northCount);
+    Serial.print(" S:"); Serial.print(southCount);
+    Serial.print(" E:"); Serial.print(eastCount);
+    Serial.print(" W:"); Serial.print(westCount);
+    Serial.print(" | NS_density:"); Serial.print(northCount + southCount);
+    Serial.print(" EW_density:"); Serial.print(eastCount + westCount);
+    Serial.print(" | State:"); Serial.println(currentState);
+  }
+}
