@@ -30,8 +30,11 @@ void setup() {
   displayInit();
   sensorsInit();
 
+  currentState = LANE_A_GREEN;
   currentGreenDuration = calcGreenDuration(northCount + southCount);
   stateStartTime = millis();
+  lastGreenTimestamp[LANE_A] = millis();
+  lastGreenTimestamp[LANE_B] = 0;
 }
 
 void loop() {

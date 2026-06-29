@@ -15,14 +15,14 @@ void displayInit() {
 void updateDisplays() {
   unsigned long elapsed = millis() - stateStartTime;
   unsigned long currentPhaseDuration =
-      (currentState == NS_YELLOW_PHASE || currentState == EW_YELLOW_PHASE)
+      (currentState == LANE_A_YELLOW || currentState == LANE_B_YELLOW)
         ? YELLOW_TIME : currentGreenDuration;
 
   long remaining = (long)(currentPhaseDuration - elapsed) / 1000;
   if (remaining < 0) remaining = 0;
 
-  bool nsActive = (currentState == NS_GREEN_PHASE || currentState == NS_YELLOW_PHASE);
-  bool ewActive = (currentState == EW_GREEN_PHASE || currentState == EW_YELLOW_PHASE);
+  bool nsActive = (currentState == LANE_A_GREEN || currentState == LANE_A_YELLOW);
+  bool ewActive = (currentState == LANE_B_GREEN || currentState == LANE_B_YELLOW);
 
   nsDisp.showNumberDec(nsActive ? remaining : 0);
   ewDisp.showNumberDec(ewActive ? remaining : 0);
