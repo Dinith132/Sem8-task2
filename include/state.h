@@ -9,18 +9,9 @@ extern LightState currentState;
 extern unsigned long stateStartTime;
 extern unsigned long currentGreenDuration;
 
-extern int northCount;
-extern int southCount;
-extern int eastCount;
-extern int westCount;
-
-extern bool lastNorthIn;
-extern bool lastNorthOut;
-extern bool lastSouthIn;
-extern bool lastSouthOut;
-extern bool lastEastIn;
-extern bool lastEastOut;
-extern bool lastWestIn;
-extern bool lastWestOut;
+extern volatile int northCount;
+extern volatile int southCount;
+extern volatile int eastCount;
+extern volatile int westCount;
 
 #endif

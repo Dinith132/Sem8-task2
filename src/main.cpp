@@ -28,13 +28,13 @@ void setup() {
   pinMode(EW_GREEN, OUTPUT);
 
   displayInit();
+  sensorsInit();
 
   currentGreenDuration = calcGreenDuration(northCount + southCount);
   stateStartTime = millis();
 }
 
 void loop() {
-  updateDensity();
   updateStateMachine();
   applyLights();
   updateDisplays();

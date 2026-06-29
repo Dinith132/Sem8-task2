@@ -3,28 +3,47 @@
 #include "state.h"
 #include "sensors.h"
 
-static void readLaneEdgeTriggered(const char* name, int inPin, bool &lastIn, int outPin, bool &lastOut, int &count) {
-  bool currentIn = digitalRead(inPin);
-  if (currentIn == HIGH && lastIn == LOW) {
-    count++;
-    Serial.print("[EVENT] "); Serial.print(name);
-    Serial.print(" IN -> count = "); Serial.println(count);
-  }
-  lastIn = currentIn;
+struct LaneIsrContext {
+  volatile int* count;
+  bool isOut;
+};
 
-  bool currentOut = digitalRead(outPin);
-  if (currentOut == HIGH && lastOut == LOW) {
-    count--;
-    if (count < 0) count = 0;
-    Serial.print("[EVENT] "); Serial.print(name);
-    Serial.print(" OUT -> count = "); Serial.println(count);
+static LaneIsrContext northInCtx  = { &northCount, false };
+static LaneIsrContext northOutCtx = { &northCount, true };
+static LaneIsrContext southInCtx  = { &southCount, false };
+static LaneIsrContext southOutCtx = { &southCount, true };
+static LaneIsrContext eastInCtx   = { &eastCount, false };
+static LaneIsrContext eastOutCtx  = { &eastCount, true };
+static LaneIsrContext westInCtx   = { &westCount, false };
+static LaneIsrContext westOutCtx  = { &westCount, true };
+
+static void IRAM_ATTR laneIsr(void* arg) {
+  auto* ctx = static_cast<LaneIsrContext*>(arg);
+  if (ctx->isOut) {
+    if (*ctx->count > 0) {
+      --(*ctx->count);
+    }
+  } else {
+    ++(*ctx->count);
   }
-  lastOut = currentOut;
 }
 
-void updateDensity() {
-  readLaneEdgeTriggered("NORTH", NORTH_IN, lastNorthIn, NORTH_OUT, lastNorthOut, northCount);
-  readLaneEdgeTriggered("SOUTH", SOUTH_IN, lastSouthIn, SOUTH_OUT, lastSouthOut, southCount);
-  readLaneEdgeTriggered("EAST",  EAST_IN,  lastEastIn,  EAST_OUT,  lastEastOut,  eastCount);
-  readLaneEdgeTriggered("WEST",  WEST_IN,  lastWestIn,  WEST_OUT,  lastWestOut,  westCount);
+static void attachLaneInterrupt(int pin, LaneIsrContext* ctx) {
+  attachInterruptArg(
+    digitalPinToInterrupt(pin),
+    laneIsr,
+    ctx,
+    RISING
+  );
+}
+
+void sensorsInit() {
+  attachLaneInterrupt(NORTH_IN,  &northInCtx);
+  attachLaneInterrupt(NORTH_OUT, &northOutCtx);
+  attachLaneInterrupt(SOUTH_IN,  &southInCtx);
+  attachLaneInterrupt(SOUTH_OUT, &southOutCtx);
+  attachLaneInterrupt(EAST_IN,   &eastInCtx);
+  attachLaneInterrupt(EAST_OUT,  &eastOutCtx);
+  attachLaneInterrupt(WEST_IN,   &westInCtx);
+  attachLaneInterrupt(WEST_OUT,  &westOutCtx);
 }
