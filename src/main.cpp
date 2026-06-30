@@ -7,7 +7,7 @@
 #include "debug.h"
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(500);
   Serial.println("=== Traffic Junction Boot ===");
 
