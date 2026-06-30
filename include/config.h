@@ -15,6 +15,7 @@ const int WEST_OUT  = 23;
 const int NS_RED    = 13;
 const int NS_YELLOW = 5;
 const int NS_GREEN  = 4;
+
 const int EW_RED    = 17;
 const int EW_YELLOW = 16;
 const int EW_GREEN  = 14;
