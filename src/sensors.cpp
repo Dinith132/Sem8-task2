@@ -3,47 +3,76 @@
 #include "state.h"
 #include "sensors.h"
 
-struct LaneIsrContext {
+struct SensorChannel {
+  int pin;
   volatile int* count;
   bool isOut;
+  volatile bool pinHigh;
+  volatile unsigned long lastEdgeMs;
+  bool lastStableHigh;
 };
 
-static LaneIsrContext northInCtx  = { &northCount, false };
-static LaneIsrContext northOutCtx = { &northCount, true };
-static LaneIsrContext southInCtx  = { &southCount, false };
-static LaneIsrContext southOutCtx = { &southCount, true };
-static LaneIsrContext eastInCtx   = { &eastCount, false };
-static LaneIsrContext eastOutCtx  = { &eastCount, true };
-static LaneIsrContext westInCtx   = { &westCount, false };
-static LaneIsrContext westOutCtx  = { &westCount, true };
+static SensorChannel northInCh  = { NORTH_IN,  &northCount, false, false, 0, false };
+static SensorChannel northOutCh = { NORTH_OUT, &northCount, true,  false, 0, false };
+static SensorChannel southInCh  = { SOUTH_IN,  &southCount, false, false, 0, false };
+static SensorChannel southOutCh = { SOUTH_OUT, &southCount, true,  false, 0, false };
+static SensorChannel eastInCh   = { EAST_IN,   &eastCount,  false, false, 0, false };
+static SensorChannel eastOutCh  = { EAST_OUT,  &eastCount,  true,  false, 0, false };
+static SensorChannel westInCh   = { WEST_IN,   &westCount,  false, false, 0, false };
+static SensorChannel westOutCh  = { WEST_OUT,  &westCount,  true,  false, 0, false };
 
-static void IRAM_ATTR laneIsr(void* arg) {
-  auto* ctx = static_cast<LaneIsrContext*>(arg);
-  if (ctx->isOut) {
-    if (*ctx->count > 0) {
-      --(*ctx->count);
-    }
-  } else {
-    ++(*ctx->count);
-  }
+static SensorChannel* const allChannels[] = {
+  &northInCh, &northOutCh, &southInCh, &southOutCh,
+  &eastInCh, &eastOutCh, &westInCh, &westOutCh
+};
+
+static void IRAM_ATTR sensorIsr(void* arg) {
+  auto* ch = static_cast<SensorChannel*>(arg);
+  ch->lastEdgeMs = millis();
+  ch->pinHigh = digitalRead(ch->pin);
 }
 
-static void attachLaneInterrupt(int pin, LaneIsrContext* ctx) {
+static void initChannel(SensorChannel* ch) {
+  ch->pinHigh = digitalRead(ch->pin);
+  ch->lastStableHigh = ch->pinHigh;
+  ch->lastEdgeMs = millis();
   attachInterruptArg(
-    digitalPinToInterrupt(pin),
-    laneIsr,
-    ctx,
-    RISING
+    digitalPinToInterrupt(ch->pin),
+    sensorIsr,
+    ch,
+    CHANGE
   );
 }
 
+static void updateChannel(SensorChannel* ch) {
+  if (millis() - ch->lastEdgeMs < SENSOR_DEBOUNCE_MS) {
+    return;
+  }
+
+  bool stableHigh = ch->pinHigh;
+
+  // Count only on clear -> blocked (stable LOW to stable HIGH).
+  if (stableHigh && !ch->lastStableHigh) {
+    if (ch->isOut) {
+      if (*ch->count > 0) {
+        --(*ch->count);
+      }
+    } else {
+      ++(*ch->count);
+    }
+  }
+
+  ch->lastStableHigh = stableHigh;
+}
+
 void sensorsInit() {
-  attachLaneInterrupt(NORTH_IN,  &northInCtx);
-  attachLaneInterrupt(NORTH_OUT, &northOutCtx);
-  attachLaneInterrupt(SOUTH_IN,  &southInCtx);
-  attachLaneInterrupt(SOUTH_OUT, &southOutCtx);
-  attachLaneInterrupt(EAST_IN,   &eastInCtx);
-  attachLaneInterrupt(EAST_OUT,  &eastOutCtx);
-  attachLaneInterrupt(WEST_IN,   &westInCtx);
-  attachLaneInterrupt(WEST_OUT,  &westOutCtx);
+  for (SensorChannel* ch : allChannels) {
+    initChannel(ch);
+  }
+}
+
+void sensorsUpdate() {
+  for (SensorChannel* ch : allChannels) {
+    updateChannel(ch);
+  }
 }

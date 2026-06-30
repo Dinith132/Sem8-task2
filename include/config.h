@@ -24,6 +24,9 @@ const int EW_GREEN  = 14;
 const int NS_DIO = 22;
 const int EW_DIO = 27;
 
+// ===== SENSOR TUNING =====
+const unsigned long SENSOR_DEBOUNCE_MS = 50;  // stable-state debounce window
+
 // ===== ALGORITHM TUNABLES (seconds — tune here) =====
 #define SCORE_WAIT_WEIGHT_K     0.5f    // K in score = count + K * wait_sec
 #define T_MAX_SEC               45

@@ -2,5 +2,6 @@
 #define SENSORS_H
 
 void sensorsInit();
+void sensorsUpdate();
 
 #endif

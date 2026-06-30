@@ -38,6 +38,7 @@ void setup() {
 }
 
 void loop() {
+  sensorsUpdate();
   updateStateMachine();
   applyLights();
   updateDisplays();
